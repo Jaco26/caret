@@ -1,4 +1,4 @@
-import { Component } from './caret/caret.js'
+import { Component, ComponentDOM } from './caret/caret.js'
 
 // const SomeChild = new Component({
 //   template: '<span>I am a child!</span>'
@@ -13,21 +13,36 @@ const Root = new Component({
   },
   props: ['isDarkMode'],
   template: `
-    <div class="hi hillo" r-if={3 < this.age} r-for={x in [1,2,3]}>
-      <div>
-        {this.name + 98} how are-you 
-      </div>
-      <SomeChild @click={this.onClick} /> 
-      <input @input={e => this.name = e.target.value} />
-      Hiiii
-    </div>
+<div id="my-class" class="hi hillo" r-if={3 < this.age} r-for={x in [1,2,3]}>
+
+  <div>
+    {23 + 98} how are-you 
+    <p>
+      <h1>What?</h1>
+      How re you? {this.name + this.name}
+    </p>
+    hello
+  </div>
+
+  <SomeChild id class="Hello" @click={this.onClick} /> 
+  <input @input={this.onInput} />
+  Hiiii
+</div>
   `
 })
 
+
 const preTemplate = document.createElement('pre')
 preTemplate.textContent = Root.template
-const preAst = document.createElement('pre')
-preAst.textContent = JSON.stringify(Root.ast, null, 2)
 
-document.querySelector('#app').append(preTemplate)
-document.querySelector('#app').append(preAst)
+const dom = new ComponentDOM(Root, document.getElementById('app'))
+
+dom.render({
+  name: 'jaconb',
+  onInput(e) {
+    console.log(e.target.value)
+    console.log(this.name)
+  }
+})
+
+document.getElementById('app').append(preTemplate)

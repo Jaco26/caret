@@ -111,11 +111,16 @@ export const scanTemplate = htmlString => {
       advance()
     }
     const text = htmlString.slice(start, current)
-    let type = keywords[text]
-      ? keywords[text]
-      : isTextNode()
-        ? WORD
-        : IDENTIFIER
+    const isTextNode = () => {
+      const types = tokens.map(t => t.type)
+      return types.lastIndexOf(RIGHT_CARET) > types.lastIndexOf(LEFT_CARET)
+    }
+    // let type = keywords[text]
+    //   ? keywords[text]
+    //   : isTextNode()
+    //     ? WORD
+    //     : IDENTIFIER
+    const type = isTextNode() ? WORD : IDENTIFIER
     addToken(type)
   }
 
@@ -146,11 +151,6 @@ export const scanTemplate = htmlString => {
     return current >= htmlString.length
   }
 
-  function isTextNode() {
-    const types = tokens.map(t => t.type)
-    return types.lastIndexOf(RIGHT_CARET) > types.lastIndexOf(LEFT_CARET)
-  }
-
   while (!isAtEnd()) {
     // We are at the beginning of the next lexeme.
     start = current
@@ -160,6 +160,99 @@ export const scanTemplate = htmlString => {
   return tokens
 }
 
+
+
+/**
+ * 
+ * @param {Token[]} tokens 
+ */
+function parseAttributes(tokens) {
+
+  const rv =  {
+    attributes: {},
+    directives: {},
+    listeners: {},
+    tagName: '',
+  }
+
+  let current = 0
+
+  function scanTokens() {
+    const { type, text } = advance()
+    switch (type) {
+      case LEFT_CARET:
+        scanTagName()
+        break
+      case AT:
+        scanListener()
+        break
+      case IDENTIFIER:
+        scanAttribute()
+        break
+    }
+  }
+
+  function scanTagName() {
+    rv.tagName = advance().text
+  }
+
+  function scanListener() {
+    const eventName = advance().text
+    advance() // consume the =
+    const listener = advance()
+    if (listener.type !== EXPRESSION) {
+      throw new Error('Listener must be expression')
+    }
+    rv.listeners[eventName] = new Function('event', `${listener.text}(event)`)
+  }
+
+  function scanAttribute() {
+    const identifier = lookBehind()
+    const loc = directives[identifier.text]
+      ? 'directives'
+      : 'attributes'
+    if (peek().type === EQUALS) {
+      advance() // consume the =
+      const { type, text } = advance()
+      rv[loc][identifier.text] = type === STRING
+        ? text
+        : new Function(`return ${text}`)
+    } else {
+      rv[loc][identifier.text] = true
+    }
+  }
+
+  function advance() {
+    current += 1
+    return tokens[current - 1]
+  }
+
+  function peek(delta) {
+    if (isAtEnd()) return
+    return tokens[delta || current]
+  }
+
+  function lookAhead() {
+    return peek(current + 1)
+  }
+
+  function lookBehind() {
+    if (current <= 0) return
+    return peek(current - 1)
+  }
+
+  function isAtEnd() {
+    return current >= tokens.length
+  }
+
+  while (!isAtEnd()) {
+    scanTokens()
+  }
+
+
+
+  return rv
+}
 
 
 
@@ -278,26 +371,43 @@ export class AST {
       const treeNode = { type: '', tag: '', children: [] }
       while (nodes.length) {
         const node = nodes.shift()
+
         if (node.constructor === ASTTagNode) {
           if (node.kind === 'CLOSING') {
             return treeNode
           }
           else if (node.kind === 'OPENING') {
             // parse attributes
-            treeNode.tag = node.tagName
-            treeNode.type = 'ELEMENT'
-            treeNode.tokens = node.tokens.map(t => t.text).join(' ')
+            const {
+              attributes,
+              directives,
+              listeners,
+              tagName } = parseAttributes(node.tokens)
+            treeNode.tag = tagName
+            treeNode.type = 'ELEM'
+            treeNode.attributes = attributes
+            treeNode.directives = directives
+            treeNode.listeners = listeners
+            const children = traverse(nodes)
             // and then...
-            treeNode.children.push(traverse(nodes))
+            children.tag = treeNode.tag
+            children.type = treeNode.type
+            treeNode.children.push(children)
           }
           else if (node.kind === 'SELF_CLOSING') {
             // parse attributes
-
+            const {
+              attributes,
+              directives,
+              listeners,
+              tagName } = parseAttributes(node.tokens)
             // and then...
             treeNode.children.push({
-              type: 'ELEMENT',
-              tag: node.tagName,
-              tokens: node.tokens.map(t => t.text).join(' ')
+              type: 'ELEM',
+              tag: tagName,
+              attributes,
+              directives,
+              listeners,
             })
           }
         }
@@ -309,7 +419,7 @@ export class AST {
           const value = node.tokens.map(t => t.text).join(' ')
           treeNode.children.push({
             type: isText ? 'TEXT' : 'EXP',
-            value: isText ? value : new Function(`return ${value}`).call({ name: 'jacob '})
+            value: isText ? value : new Function(`return ${value}`)
           })
         }
 
@@ -318,7 +428,6 @@ export class AST {
     }
     return traverse(this.flatNodes(tokens))
   }
-
 }
 
 /**
